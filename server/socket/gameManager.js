@@ -114,6 +114,10 @@ function playCard(io, socket, { roomID, card }) {
     game.hands[socket.id] = game.hands[socket.id].filter(c => !(c.suit===card.suit && c.value===card.value));
     game.table.push({ card, playerId: socket.id });
 
+    if (game.table.length === 1) {
+    game.leadSuit = card.suit;
+}
+
     // Broadcast played card
     io.to(roomID).emit('card_played_on_table', { card, playerId: socket.id });
 
@@ -133,7 +137,7 @@ function playCard(io, socket, { roomID, card }) {
         console.log("Next Turn Index:", game.currentTurnIndex);
         console.log("Next Player:", nextPlayer.username);
         io.to(nextPlayer.socketId).emit('your_turn', { hand: game.hands[nextPlayer.socketId] });
-        onsole.log("Trick Completed");
+        console.log("Trick Completed");
         console.log("Tricks Won:", game.tricksWon);
     } else {
         // Move to next player
