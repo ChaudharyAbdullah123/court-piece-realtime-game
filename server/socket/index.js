@@ -11,8 +11,8 @@ let io;
 function initSocket(server) {
     io = new Server(server, {
         cors: {
-            origin: "*",
-            methods: ["GET", "POST"]
+            origin: '*',
+            methods: ['GET', 'POST']
         }
     });
 
@@ -32,7 +32,7 @@ function initSocket(server) {
             socket.userId = decoded.id;
             socket.isGuest = decoded.isGuest || false;
             next();
-        } catch (err) {
+        } catch {
             return next(new Error('Unauthorized: Invalid Token'));
         }
     });
@@ -47,7 +47,7 @@ function initSocket(server) {
             const guestMode = isGuest || socket.isGuest || false;
             const roomID = roomManager.joinRoom(io, socket, username, guestMode);
             console.log(`✅ ${username} joined → Room: ${roomID} (Guest: ${guestMode})`);
-            socket.emit("room_joined", { roomID });
+            socket.emit('room_joined', { roomID });
         });
 
         // =========================
@@ -72,12 +72,12 @@ function initSocket(server) {
 
             console.log(`🔒 ${username} created private room ${roomID} with code ${room.code}`);
 
-            socket.emit("private_room_created", {
+            socket.emit('private_room_created', {
                 roomID,
                 roomCode: room.code
             });
 
-            io.to(roomID).emit("room_update", room);
+            io.to(roomID).emit('room_update', room);
         });
 
         // =========================
@@ -87,7 +87,7 @@ function initSocket(server) {
             const roomID = roomManager.joinRoomByCode(io, socket, roomCode, username);
             if (roomID) {
                 console.log(`✅ ${username} joined private room via code ${roomCode}`);
-                socket.emit("room_joined", { roomID, roomCode });
+                socket.emit('room_joined', { roomID, roomCode });
             }
         });
 
@@ -107,7 +107,7 @@ function initSocket(server) {
         socket.on('leave_room', () => {
             console.log(`🚪 Player ${socket.id} voluntarily left room`);
             roomManager.removePlayerFromRooms(io, socket.id);
-            socket.emit("left_room");
+            socket.emit('left_room');
         });
 
         // =========================

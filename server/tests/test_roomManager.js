@@ -12,8 +12,8 @@ const mockIo = {
     emitted: [],
     to: function(room) {
         return {
-            emit: (event, data) => {
-                mockIo.emitted.push({ room, event, data });
+            emit: (_event, _data) => {
+                mockIo.emitted.push({ room, event: _event, data: _data });
             }
         };
     },

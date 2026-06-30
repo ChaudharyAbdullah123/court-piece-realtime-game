@@ -1,4 +1,3 @@
-const { getRank } = require('../utils/rankHelper');
 const trickEvaluator = require('./TrickManager');
 
 // Helper to check card values
@@ -36,7 +35,7 @@ function selectBotTrump(hand) {
         }
     });
 
-    let maxSuit = "hearts";
+    let maxSuit = 'hearts';
     let maxCount = -1;
     for (const suit in counts) {
         if (counts[suit] > maxCount) {

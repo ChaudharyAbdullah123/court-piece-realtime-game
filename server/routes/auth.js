@@ -59,7 +59,7 @@ router.post('/facebook', async (req, res) => {
                     fbFriends = data.friends.data.map(friend => friend.id);
                 }
             } catch (err) {
-                console.error("Facebook token verification failed:", err.message);
+                console.error('Facebook token verification failed:', err.message);
                 return res.status(401).json({ error: 'Invalid Facebook token' });
             }
         }

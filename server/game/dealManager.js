@@ -22,7 +22,7 @@ function dealInitialCards(io, game) {
         game.initialCards[player.socketId] = card;
 
         io.to(player.socketId).emit(
-            "initial_card",
+            'initial_card',
             {
                 card
             }
@@ -42,7 +42,7 @@ function dealTrumpSelectorCards(io, game) {
     );
 
     if (!selector) {
-        console.log("❌ Trump selector not found");
+        console.log('❌ Trump selector not found');
         return;
     }
 
@@ -60,13 +60,13 @@ function dealTrumpSelectorCards(io, game) {
     }
 
     io.to(selector.socketId).emit(
-        "receive_hand",
+        'receive_hand',
         {
             hand: game.hands[selector.socketId]
         }
     );
 
-    game.phase = "choosing_trump";
+    game.phase = 'choosing_trump';
 }
 
 // =========================
@@ -99,7 +99,7 @@ function completeDeal(io, game) {
 
         for (let i = 0; i < 5; i++) {
             if (game.deck.length === 0) {
-                console.log("❌ Deck Empty");
+                console.log('❌ Deck Empty');
                 return;
             }
             game.hands[player.socketId]
@@ -140,14 +140,14 @@ function completeDeal(io, game) {
     for (const player of dealOrder) {
 
         io.to(player.socketId).emit(
-            "receive_hand",
+            'receive_hand',
             {
                 hand: game.hands[player.socketId]
             }
         );
     }
 
-    game.phase = "playing";
+    game.phase = 'playing';
 }
 
 module.exports = {

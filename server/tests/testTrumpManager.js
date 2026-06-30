@@ -3,10 +3,10 @@ const trumpManager = require('../game/trumpManager');
 // Fake 4 players
 const fakeGame = {
     players: [
-        { socketId: "P1", username: "Alice", team: "A" },
-        { socketId: "P2", username: "Bob", team: "B" },
-        { socketId: "P3", username: "Charlie", team: "A" },
-        { socketId: "P4", username: "David", team: "B" }
+        { socketId: 'P1', username: 'Alice', team: 'A' },
+        { socketId: 'P2', username: 'Bob', team: 'B' },
+        { socketId: 'P3', username: 'Charlie', team: 'A' },
+        { socketId: 'P4', username: 'David', team: 'B' }
     ],
 
     // 🔥 FORCE OPPONENT TIE (P1 & P2 both A)
@@ -24,26 +24,26 @@ const fakeGame = {
     ],
 
     dealerIndex: 0,
-    phase: "initial_trump_selection"
+    phase: 'initial_trump_selection'
 };
 
 // Fake io object
 const fakeIO = {
     to: (id) => ({
         emit: (event, data) => {
-            console.log("EMIT →", event, "→", id);
+            console.log('EMIT →', event, '→', id);
             console.log(data);
-            console.log("-------------");
+            console.log('-------------');
         }
     })
 };
 
-console.log("===== TESTING TRUMP MODULE (OPPONENT TIE) =====");
+console.log('===== TESTING TRUMP MODULE (OPPONENT TIE) =====');
 
 const selector = trumpManager.handleInitialTrumpSelection(
     fakeIO,
     fakeGame,
-    "room1"
+    'room1'
 );
 
-console.log("Trump Selector:", selector);
+console.log('Trump Selector:', selector);

@@ -36,7 +36,7 @@ function handleInitialTrumpSelection(io, game, roomID) {
 
         if (candidates.length === 1) {
             selector = candidates[0].socketId;
-            console.log("🎯 Single winner found:", candidates[0].username);
+            console.log('🎯 Single winner found:', candidates[0].username);
             break;
         }
 
@@ -49,22 +49,22 @@ function handleInitialTrumpSelection(io, game, roomID) {
             const dealOrder = getDealOrder(game);
             const winner = dealOrder.find(p => candidates.some(c => c.socketId === p.socketId));
             selector = winner.socketId;
-            console.log("✅ Same team tie → Selecting by deal order:", winner.username);
+            console.log('✅ Same team tie → Selecting by deal order:', winner.username);
             break;
         } else {
             // Different teams tie: redraw for all 4 players
-            console.log("🔁 Opponent tie → Redrawing 1 card each for all players...");
+            console.log('🔁 Opponent tie → Redrawing 1 card each for all players...');
             dealManager.dealInitialCards(io, game);
         }
     }
 
     if (!selector) {
-        console.log("❌ Trump selection failed after retries");
+        console.log('❌ Trump selection failed after retries');
         return null;
     }
 
     game.trumpSelector = selector;
-    console.log("🎯 Trump Selector determined:", selector);
+    console.log('🎯 Trump Selector determined:', selector);
 
     // Re-create and shuffle the deck so we deal from a full 52-card deck
     const createDeck = require('../utils/createDeck');
@@ -75,12 +75,12 @@ function handleInitialTrumpSelection(io, game, roomID) {
     dealManager.dealTrumpSelectorCards(io, game);
 
     // Ask for trump (pass hand and roomID)
-    io.to(selector).emit("choose_trump", {
+    io.to(selector).emit('choose_trump', {
         roomID,
         hand: game.hands[selector]
     });
 
-    game.phase = "choosing_trump";
+    game.phase = 'choosing_trump';
 
     return selector;
 }

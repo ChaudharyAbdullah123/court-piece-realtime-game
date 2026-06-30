@@ -7,19 +7,19 @@ function registerTrumpHandler(
 ){
 
     socket.removeAllListeners(
-        "trump_selected"
+        'trump_selected'
     );
 
     socket.on(
-        "trump_selected",
+        'trump_selected',
         (data) => {
 
             console.log(
-                "📥 EVENT: trump_selected FROM",
+                '📥 EVENT: trump_selected FROM',
                 socket.id
             );
 
-            console.log("DATA:", data);
+            console.log('DATA:', data);
 
             gameManager.selectTrump(
                 io,

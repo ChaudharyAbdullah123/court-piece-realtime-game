@@ -112,10 +112,10 @@ const shuffle = require('../utils/shuffle');
 
 const fakeGame = {
     players: [
-        { socketId: "P1", username: "Alice", team: "A" },
-        { socketId: "P2", username: "Bob", team: "B" },
-        { socketId: "P3", username: "Charlie", team: "A" },
-        { socketId: "P4", username: "David", team: "B" }
+        { socketId: 'P1', username: 'Alice', team: 'A' },
+        { socketId: 'P2', username: 'Bob', team: 'B' },
+        { socketId: 'P3', username: 'Charlie', team: 'A' },
+        { socketId: 'P4', username: 'David', team: 'B' }
     ],
     deck: shuffle(createDeck()),
     dealerIndex: 0
@@ -125,17 +125,17 @@ const fakeGame = {
 const fakeIO = {
     to: () => ({
         emit: (event, data) => {
-            console.log("EVENT:", event, data);
+            console.log('EVENT:', event, data);
         }
     })
 };
 
-console.log("=== TESTING TRUMP MANAGER ===");
+console.log('=== TESTING TRUMP MANAGER ===');
 
 const selector = trumpManager.handleInitialTrumpSelection(
     fakeIO,
     fakeGame,
-    "room1"
+    'room1'
 );
 
-console.log("Trump Selector:", selector);
+console.log('Trump Selector:', selector);

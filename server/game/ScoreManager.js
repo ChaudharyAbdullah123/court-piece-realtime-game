@@ -39,14 +39,14 @@ function updateDoubleSar(game, winnerPlayer, winningCard) {
         console.log(`👑 Senior Player changed to: ${winnerPlayer.username}`);
     }
 
-    console.log("Current Round Scores (Collected Tricks):", game.sar);
+    console.log('Current Round Scores (Collected Tricks):', game.sar);
 }
 
 function getWinningTeam(game) {
     if (game.sar.A > game.sar.B) {
-        return "A";
+        return 'A';
     } else if (game.sar.B > game.sar.A) {
-        return "B";
+        return 'B';
     }
     return null; // Tie
 }

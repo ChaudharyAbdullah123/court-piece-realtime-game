@@ -23,7 +23,7 @@ class GameState {
 
         this.dealerIndex = 0;
 
-        this.phase = "waiting";
+        this.phase = 'waiting';
 
         this.scores = {
             A: 0,

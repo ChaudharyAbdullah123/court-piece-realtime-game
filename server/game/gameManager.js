@@ -1,7 +1,6 @@
 const dealManager = require('./dealManager');
 const trumpManager = require('./trumpManager');
 const scoreManager = require('./ScoreManager');
-const turnManager = require('./TurnManager');
 const botManager = require('./botManager');
 const createDeck = require('../utils/createDeck');
 const shuffle = require('../utils/shuffle');
@@ -23,7 +22,7 @@ function startGame(io, roomID) {
     const room = rooms[roomID];
 
     if (!room || room.players.length !== 4) {
-        console.log("❌ Need 4 players to start");
+        console.log('❌ Need 4 players to start');
         return;
     }
 
@@ -36,9 +35,9 @@ function startGame(io, roomID) {
     room.players[1].team = 'B';
     room.players[3].team = 'B';
 
-    console.log("===== TEAM ASSIGNMENT =====");
+    console.log('===== TEAM ASSIGNMENT =====');
     room.players.forEach((p, i) => console.log(`Player ${i}: ${p.username} → Team ${p.team}`));
-    console.log("===========================");
+    console.log('===========================');
 
     games[roomID] = {
         players: room.players,
@@ -59,12 +58,12 @@ function startGame(io, roomID) {
         roundHistory: [],       // track round results for DB save
         roundNumber: 1,
         isGuestMatch: room.isGuestRoom || false,
-        phase: "initial_trump_selection"
+        phase: 'initial_trump_selection'
     };
 
-    console.log("🚀 Game initialized");
+    console.log('🚀 Game initialized');
 
-    io.to(roomID).emit("teams_assigned", {
+    io.to(roomID).emit('teams_assigned', {
         players: games[roomID].players.map(p => ({
             socketId: p.socketId,
             username: p.username,
@@ -74,7 +73,7 @@ function startGame(io, roomID) {
 
     const selector = trumpManager.handleInitialTrumpSelection(io, games[roomID], roomID);
     if (!selector) {
-        console.log("❌ Failed to determine trump selector");
+        console.log('❌ Failed to determine trump selector');
     }
 
     checkAndTriggerBotTurn(io, roomID);
@@ -86,32 +85,32 @@ function startGame(io, roomID) {
 function selectTrump(io, socket, { roomID, suit }) {
     const game = games[roomID];
     if (!game) return;
-    if (game.phase !== "choosing_trump") return;
+    if (game.phase !== 'choosing_trump') return;
     if (game.trump) return;
 
     if (socket.id !== game.trumpSelector) {
-        return socket.emit("invalid_move", { msg: "Only selector can choose trump" });
+        return socket.emit('invalid_move', { msg: 'Only selector can choose trump' });
     }
 
-    const validSuits = ["hearts", "spades", "clubs", "diamonds"];
+    const validSuits = ['hearts', 'spades', 'clubs', 'diamonds'];
     if (!validSuits.includes(suit)) {
-        return socket.emit("invalid_move", { msg: "Invalid suit" });
+        return socket.emit('invalid_move', { msg: 'Invalid suit' });
     }
 
     game.trump = suit;
-    console.log("✅ Trump Selected:", suit);
+    console.log('✅ Trump Selected:', suit);
 
-    io.to(roomID).emit("trump_chosen", { suit });
+    io.to(roomID).emit('trump_chosen', { suit });
 
     dealManager.completeDeal(io, game);
     delete game.initialCards;
 
     game.currentTurnIndex = game.players.findIndex(p => p.socketId === game.trumpSelector);
     const firstPlayer = game.players[game.currentTurnIndex];
-    console.log("🎯 First Turn:", firstPlayer.username);
+    console.log('🎯 First Turn:', firstPlayer.username);
 
-    io.to(firstPlayer.socketId).emit("your_turn", { hand: game.hands[firstPlayer.socketId] });
-    game.phase = "playing";
+    io.to(firstPlayer.socketId).emit('your_turn', { hand: game.hands[firstPlayer.socketId] });
+    game.phase = 'playing';
 
     // Start turn timer for first player
     startTurnTimer(io, roomID, game);
@@ -124,17 +123,17 @@ function selectTrump(io, socket, { roomID, suit }) {
 // =========================
 function playCard(io, socket, { roomID, card }) {
     const game = games[roomID];
-    if (!game || game.phase !== "playing") return;
+    if (!game || game.phase !== 'playing') return;
 
     const player = game.players[game.currentTurnIndex];
 
     if (socket.id !== player.socketId) {
-        socket.emit('invalid_move', { msg: "Not your turn" });
+        socket.emit('invalid_move', { msg: 'Not your turn' });
         return;
     }
 
     if (!ruleEngine.isCardPlayable(game, socket.id, card)) {
-        socket.emit('invalid_move', { msg: "Card not allowed" });
+        socket.emit('invalid_move', { msg: 'Card not allowed' });
         return;
     }
 
@@ -162,7 +161,7 @@ function playCard(io, socket, { roomID, card }) {
         game.tricksPlayed += 1;
         scoreManager.updateDoubleSar(game, winnerPlayer, winningCard);
 
-        console.log("✅ Trick Completed. Tricks Played:", game.tricksPlayed);
+        console.log('✅ Trick Completed. Tricks Played:', game.tricksPlayed);
 
         game.table = [];
         game.leadSuit = null;
@@ -200,7 +199,7 @@ function startTurnTimer(io, roomID, game) {
     console.log(`⏱ Turn timer started for ${currentPlayer.username}`);
 
     // Broadcast timer start to all clients
-    io.to(roomID).emit("turn_timer_start", {
+    io.to(roomID).emit('turn_timer_start', {
         playerId: currentPlayer.socketId,
         username: currentPlayer.username,
         seconds: TURN_TIMEOUT_MS / 1000
@@ -208,13 +207,13 @@ function startTurnTimer(io, roomID, game) {
 
     turnTimers[roomID] = setTimeout(() => {
         const g = games[roomID];
-        if (!g || g.phase !== "playing") return;
+        if (!g || g.phase !== 'playing') return;
 
         const idlePlayer = g.players[g.currentTurnIndex];
         if (!idlePlayer || idlePlayer.isBot) return;
 
         console.log(`⏰ Turn timeout! Auto-playing for ${idlePlayer.username}`);
-        io.to(roomID).emit("turn_timeout", { username: idlePlayer.username });
+        io.to(roomID).emit('turn_timeout', { username: idlePlayer.username });
 
         // Auto-play the first valid card from hand
         const hand = g.hands[idlePlayer.socketId];
@@ -241,12 +240,12 @@ function clearTurnTimer(roomID) {
 // =========================
 function endRound(io, roomID, game) {
     clearTurnTimer(roomID);
-    console.log("🏁 ROUND COMPLETED");
+    console.log('🏁 ROUND COMPLETED');
 
     const winningTeam = scoreManager.getWinningTeam(game);
     scoreManager.updateMatchScore(game, winningTeam);
 
-    console.log("Winner Team:", winningTeam, "| Scores:", game.scores);
+    console.log('Winner Team:', winningTeam, '| Scores:', game.scores);
 
     // Track round history for DB save
     game.roundHistory.push({
@@ -257,7 +256,7 @@ function endRound(io, roomID, game) {
         winningTeam
     });
 
-    io.to(roomID).emit("round_ended", {
+    io.to(roomID).emit('round_ended', {
         winningTeam,
         sar: game.sar,
         scores: game.scores
@@ -277,16 +276,16 @@ function endRound(io, roomID, game) {
     let nextSelectorIndex;
     if (game.sar[prevSelectorTeam] === 13) {
         nextSelectorIndex = (prevSelectorIndex + 2) % 4;
-        console.log("👑 FULL COURT! Partner of previous caller gets to choose trump.");
+        console.log('👑 FULL COURT! Partner of previous caller gets to choose trump.');
     } else if (game.sar[prevSelectorTeam === 'A' ? 'B' : 'A'] === 13) {
         nextSelectorIndex = (prevSelectorIndex + 1) % 4;
-        console.log("💀 GOON COURT! Opponent clockwise gets to choose trump.");
+        console.log('💀 GOON COURT! Opponent clockwise gets to choose trump.');
     } else if (winningTeam === prevSelectorTeam) {
         nextSelectorIndex = prevSelectorIndex;
-        console.log("🔁 Calling team won. Same player chooses trump.");
+        console.log('🔁 Calling team won. Same player chooses trump.');
     } else {
         nextSelectorIndex = (prevSelectorIndex + 1) % 4;
-        console.log("🔄 Opponents won. Trump selection rotates clockwise.");
+        console.log('🔄 Opponents won. Trump selection rotates clockwise.');
     }
 
     const nextSelectorId = game.players[nextSelectorIndex].socketId;
@@ -308,7 +307,7 @@ async function endMatch(io, roomID, game, matchWinner) {
     clearTurnTimer(roomID);
     console.log(`🏆 MATCH WON BY TEAM ${matchWinner}!`);
 
-    io.to(roomID).emit("match_ended", {
+    io.to(roomID).emit('match_ended', {
         winnerTeam: matchWinner,
         scores: game.scores,
         roundHistory: game.roundHistory
@@ -329,9 +328,9 @@ async function endMatch(io, roomID, game, matchWinner) {
             rounds: game.roundHistory,
             isGuestMatch: game.isGuestMatch || false
         });
-        console.log("💾 Match history saved to DB");
+        console.log('💾 Match history saved to DB');
     } catch (err) {
-        console.error("❌ Failed to save match history:", err.message);
+        console.error('❌ Failed to save match history:', err.message);
     }
 
     // Clean up
@@ -339,8 +338,8 @@ async function endMatch(io, roomID, game, matchWinner) {
     const room = rooms[roomID];
     if (room) {
         room.gameStarted = false;
-        room.status = "waiting";
-        io.to(roomID).emit("return_to_lobby", { roomID });
+        room.status = 'waiting';
+        io.to(roomID).emit('return_to_lobby', { roomID });
     }
 }
 
@@ -358,7 +357,7 @@ function resetRound(game, nextSelectorId, nextDealerIndex) {
     game.trumpRevealed = false;
     game.trumpSelector = nextSelectorId;
     game.dealerIndex = nextDealerIndex;
-    game.phase = "choosing_trump";
+    game.phase = 'choosing_trump';
 }
 
 // =========================
@@ -369,7 +368,7 @@ function startNextRound(io, roomID, game) {
     game.deck = shuffle(createDeck());
     dealManager.dealTrumpSelectorCards(io, game);
 
-    io.to(game.trumpSelector).emit("choose_trump", {
+    io.to(game.trumpSelector).emit('choose_trump', {
         roomID,
         hand: game.hands[game.trumpSelector]
     });
@@ -385,7 +384,7 @@ function checkAndTriggerBotTurn(io, roomID) {
     if (!game) return;
     if (botTurnPending[roomID]) return;
 
-    if (game.phase === "choosing_trump") {
+    if (game.phase === 'choosing_trump') {
         const selector = game.players.find(p => p.socketId === game.trumpSelector);
         if (selector && selector.isBot) {
             botTurnPending[roomID] = true;
@@ -398,12 +397,12 @@ function checkAndTriggerBotTurn(io, roomID) {
                 console.log(`🤖 Bot ${selector.username} chose trump: ${suit}`);
                 const mockSocket = {
                     id: selector.socketId,
-                    emit: (event, data) => {}
+                    emit: (_event, _data) => {}
                 };
                 selectTrump(io, mockSocket, { roomID, suit });
             }, 1500);
         }
-    } else if (game.phase === "playing") {
+    } else if (game.phase === 'playing') {
         const player = game.players[game.currentTurnIndex];
         if (player && player.isBot) {
             botTurnPending[roomID] = true;
@@ -414,7 +413,7 @@ function checkAndTriggerBotTurn(io, roomID) {
                 if (card) {
                     const mockSocket = {
                         id: player.socketId,
-                        emit: (event, data) => {}
+                        emit: (_event, _data) => {}
                     };
                     playCard(io, mockSocket, { roomID, card });
                 }

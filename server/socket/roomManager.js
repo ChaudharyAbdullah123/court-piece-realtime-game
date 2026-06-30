@@ -36,7 +36,7 @@ function createRoom(isPrivate = false) {
         code: roomCode,
         players: [],
         spectators: [],
-        status: "waiting",
+        status: 'waiting',
         gameStarted: false,
         isPrivate,
         isGuestRoom: false,
@@ -61,7 +61,7 @@ function joinRoom(io, socket, username, isGuest = false) {
             code: roomCode,
             players: [],
             spectators: [],
-            status: "waiting",
+            status: 'waiting',
             gameStarted: false,
             isPrivate: true,
             isGuestRoom: true,
@@ -86,7 +86,7 @@ function joinRoom(io, socket, username, isGuest = false) {
 
         // Auto fill with bots and start the game after a small delay
         fillWithBots(io, roomID);
-        io.to(roomID).emit("room_update", room);
+        io.to(roomID).emit('room_update', room);
 
         setTimeout(() => {
             const gameManager = require('../game/gameManager');
@@ -130,7 +130,7 @@ function joinRoom(io, socket, username, isGuest = false) {
     socket.join(roomID);
     console.log(`Player ${username} joined public room ${roomID}`);
 
-    io.to(roomID).emit("room_update", room);
+    io.to(roomID).emit('room_update', room);
     return roomID;
 }
 
@@ -149,17 +149,17 @@ function joinRoomByCode(io, socket, roomCode, username) {
     }
 
     if (!foundRoom) {
-        socket.emit("error", { msg: "Room not found with code: " + roomCode });
+        socket.emit('error', { msg: 'Room not found with code: ' + roomCode });
         return null;
     }
 
     if (foundRoom.players.length >= 4) {
-        socket.emit("error", { msg: "Room is full" });
+        socket.emit('error', { msg: 'Room is full' });
         return null;
     }
 
     if (foundRoom.gameStarted) {
-        socket.emit("error", { msg: "Game already started in this room" });
+        socket.emit('error', { msg: 'Game already started in this room' });
         return null;
     }
 
@@ -181,7 +181,7 @@ function joinRoomByCode(io, socket, roomCode, username) {
     socket.join(foundRoom.roomID);
     console.log(`Player ${username} joined private room ${foundRoom.roomID} via code`);
 
-    io.to(foundRoom.roomID).emit("room_update", foundRoom);
+    io.to(foundRoom.roomID).emit('room_update', foundRoom);
     return foundRoom.roomID;
 }
 
@@ -200,7 +200,7 @@ function joinAsSpectator(io, socket, roomCode) {
     }
 
     if (!foundRoom) {
-        socket.emit("error", { msg: "Room not found with code: " + roomCode });
+        socket.emit('error', { msg: 'Room not found with code: ' + roomCode });
         return null;
     }
 
@@ -216,7 +216,7 @@ function joinAsSpectator(io, socket, roomCode) {
     const gameManager = require('../game/gameManager');
     const game = gameManager.games[foundRoom.roomID];
     
-    socket.emit("spectator_joined", { 
+    socket.emit('spectator_joined', { 
         roomID: foundRoom.roomID, 
         gameState: game ? {
             players: game.players.map(p => ({
@@ -239,7 +239,7 @@ function joinAsSpectator(io, socket, roomCode) {
         } : null 
     });
 
-    io.to(foundRoom.roomID).emit("room_update", foundRoom);
+    io.to(foundRoom.roomID).emit('room_update', foundRoom);
     return foundRoom.roomID;
 }
 
@@ -265,7 +265,7 @@ function fillWithBots(io, roomID) {
         console.log(`🤖 Spawning Bot: ${botPlayer.username}`);
     }
 
-    io.to(roomID).emit("room_update", room);
+    io.to(roomID).emit('room_update', room);
 }
 
 // =========================
@@ -282,13 +282,13 @@ function removePlayerFromRooms(io, socketId) {
             room.players.splice(index, 1);
             console.log(`🚪 Player ${removedPlayer.username} removed from ${roomID}`);
 
-            io.to(roomID).emit("room_update", room);
+            io.to(roomID).emit('room_update', room);
 
             const activeCount = room.players.filter(p => p.connected || p.isBot).length;
             if (room.gameStarted && activeCount < 4) {
                 room.gameStarted = false;
-                room.status = "paused";
-                io.to(roomID).emit("game_paused", { msg: "Not enough active players" });
+                room.status = 'paused';
+                io.to(roomID).emit('game_paused', { msg: 'Not enough active players' });
                 console.log(`⏸ Game paused in ${roomID}`);
             }
         }
@@ -299,7 +299,7 @@ function removePlayerFromRooms(io, socketId) {
             if (specIndex !== -1) {
                 room.spectators.splice(specIndex, 1);
                 console.log(`👀 Spectator ${socketId} left room ${roomID}`);
-                io.to(roomID).emit("room_update", room);
+                io.to(roomID).emit('room_update', room);
             }
         }
 
@@ -324,7 +324,7 @@ function handleDisconnect(io, socketId) {
 
             if (room.gameStarted) {
                 player.connected = false;
-                io.to(roomID).emit("player_disconnected", {
+                io.to(roomID).emit('player_disconnected', {
                     username: player.username,
                     graceTime: 15
                 });
@@ -337,7 +337,7 @@ function handleDisconnect(io, socketId) {
                 disconnectTimers[timerKey] = setTimeout(() => {
                     console.log(`⏰ Grace period expired for ${player.username} in room ${roomID}. Bot taking over.`);
                     player.isBot = true;
-                    io.to(roomID).emit("bot_takeover", { username: player.username });
+                    io.to(roomID).emit('bot_takeover', { username: player.username });
 
                     const gameManager = require('../game/gameManager');
                     gameManager.checkAndTriggerBotTurn(io, roomID);
@@ -412,9 +412,9 @@ function reconnectPlayer(io, socket, { roomID, username }) {
             game.seniorPlayerId = newSocketId;
         }
 
-        io.to(roomID).emit("player_reconnected", { username });
+        io.to(roomID).emit('player_reconnected', { username });
 
-        socket.emit("reconnect_success", {
+        socket.emit('reconnect_success', {
             roomID,
             gameState: {
                 players: game.players.map(p => ({
@@ -434,20 +434,20 @@ function reconnectPlayer(io, socket, { roomID, username }) {
                 sar: game.sar,
                 tricksPlayed: game.tricksPlayed,
                 phase: game.phase,
-                isYourTurn: (game.phase === "playing" && game.players[game.currentTurnIndex].socketId === newSocketId) ||
-                            (game.phase === "choosing_trump" && game.trumpSelector === newSocketId)
+                isYourTurn: (game.phase === 'playing' && game.players[game.currentTurnIndex].socketId === newSocketId) ||
+                            (game.phase === 'choosing_trump' && game.trumpSelector === newSocketId)
             }
         });
 
         const currentTurnPlayer = game.players[game.currentTurnIndex];
-        if (game.phase === "playing" && currentTurnPlayer.socketId === newSocketId) {
-            socket.emit("your_turn", { hand: game.hands[newSocketId] });
-        } else if (game.phase === "choosing_trump" && game.trumpSelector === newSocketId) {
-            socket.emit("choose_trump", { roomID, hand: game.hands[newSocketId] });
+        if (game.phase === 'playing' && currentTurnPlayer.socketId === newSocketId) {
+            socket.emit('your_turn', { hand: game.hands[newSocketId] });
+        } else if (game.phase === 'choosing_trump' && game.trumpSelector === newSocketId) {
+            socket.emit('choose_trump', { roomID, hand: game.hands[newSocketId] });
         }
     }
 
-    io.to(roomID).emit("room_update", room);
+    io.to(roomID).emit('room_update', room);
     return true;
 }
 

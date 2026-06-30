@@ -7,28 +7,28 @@ const gameManager =
 function registerGameHandler(io, socket) {
 
     socket.removeAllListeners(
-        "start_game"
+        'start_game'
     );
 
     socket.on(
-        "start_game",
+        'start_game',
         ({ roomID }) => {
 
             console.log(
-                "📥 EVENT: start_game FROM",
+                '📥 EVENT: start_game FROM',
                 socket.id
             );
 
-            console.log("DATA:", {
+            console.log('DATA:', {
                 roomID
             });
 
             if(!roomID){
 
                 return socket.emit(
-                    "error",
+                    'error',
                     {
-                        msg: "RoomID missing"
+                        msg: 'RoomID missing'
                     }
                 );
             }
@@ -39,9 +39,9 @@ function registerGameHandler(io, socket) {
             if(!room){
 
                 return socket.emit(
-                    "error",
+                    'error',
                     {
-                        msg: "Room not found"
+                        msg: 'Room not found'
                     }
                 );
             }
@@ -53,9 +53,9 @@ function registerGameHandler(io, socket) {
             if(room.gameStarted){
 
                 return socket.emit(
-                    "error",
+                    'error',
                     {
-                        msg: "Game already started"
+                        msg: 'Game already started'
                     }
                 );
             }
@@ -63,7 +63,7 @@ function registerGameHandler(io, socket) {
             room.gameStarted = true;
 
             console.log(
-                "🚀 GAME STARTING"
+                '🚀 GAME STARTING'
             );
 
             gameManager.startGame(
