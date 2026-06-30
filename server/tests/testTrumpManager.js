@@ -1,4 +1,4 @@
-const trumpManager = require('../socket/trumpManager');
+const trumpManager = require('../game/trumpManager');
 
 // Fake 4 players
 const fakeGame = {

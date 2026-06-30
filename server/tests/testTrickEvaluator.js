@@ -1,4 +1,4 @@
-const { evaluateTrick } = require('../socket/trickEvaluator');
+const { evaluateTrick } = require('../game/TrickManager');
 
 function runTest(testName, game) {
 

@@ -1,43 +1,81 @@
 const { Server } = require('socket.io');
+
 const roomManager = require('./roomManager');
-const gameManager = require('./gameManager');
+
+const registerCardHandler =
+    require('./handlers/cardHandler');
+
+const registerGameHandler =
+    require('./handlers/gameHandler');
+
+const registerTrumpHandler =
+    require('./handlers/trumpHandler');
+
+const registerReconnectHandler =
+    require('./handlers/reconnectHandler');
 
 let io;
 
 function initSocket(server) {
+
     io = new Server(server, {
         cors: {
-            origin: "http://localhost:3000",
-            methods: ["GET","POST"]
+            origin: "*",
+            methods: ["GET", "POST"]
         }
     });
 
     io.on('connection', (socket) => {
-        console.log(`👤 User Connected: ${socket.id}`);
 
-        // Join Room
-        socket.on('join_room', ({ roomID, username }) => {
-            roomManager.joinRoom(io, socket, roomID, username);
+        console.log(`👤 Connected: ${socket.id}`);
+
+        // =========================
+        // GLOBAL LOGGER
+        // =========================
+
+        // Uncomment below to enable verbose event logging during development
+        // socket.onAny((event, data) => {
+        //     console.log(`📥 EVENT: ${event} FROM ${socket.id}`);
+        //     console.log("DATA:", data);
+        // });
+
+        // =========================
+        // JOIN ROOM
+        // =========================
+
+        socket.on('join_room', ({ username }) => {
+
+            const roomID = roomManager.joinRoom(io, socket, username);
+
+            console.log(`✅ ${username} joined → Room: ${roomID}`);
+
+            socket.emit("room_joined", { roomID });
         });
 
-        // Start Game
-        socket.on('start_game', ({ roomID }) => {
-            gameManager.startGame(io, roomID);
-        });
+        // =========================
+        // REGISTER HANDLERS
+        // =========================
 
-        // Play Card
-        socket.on('play_card', (data) => {
-            gameManager.playCard(io, socket, data);
-        });
+        registerGameHandler(io, socket);
 
-        // Trump selected
-        socket.on('trump_selected', (data) => {
-            gameManager.selectTrump(io, socket, data);
-        });
+        registerCardHandler(io, socket);
+
+        registerTrumpHandler(io, socket);
+
+        registerReconnectHandler(io, socket);
+
+        // =========================
+        // DISCONNECT
+        // =========================
 
         socket.on('disconnect', () => {
-            roomManager.leaveRoom(io, socket.id);
-            console.log(`❌ User Disconnected: ${socket.id}`);
+
+            console.log(`❌ Disconnected: ${socket.id}`);
+
+            roomManager.handleDisconnect(
+                io,
+                socket.id
+            );
         });
     });
 }

@@ -4,11 +4,15 @@ const MONGO_URI = process.env.MONGO_URI;
 
 const connectDB = async () => {
     try {
-        await mongoose.connect(MONGO_URI); // No useNewUrlParser, useUnifiedTopology
+        if (!MONGO_URI) {
+            console.log("⚠️ MONGO_URI is undefined. Running in memory-only mode.");
+            return;
+        }
+        await mongoose.connect(MONGO_URI);
         console.log("✅ MongoDB Connected");
     } catch (err) {
-        console.error("❌ MongoDB Connection Error:", err);
-        process.exit(1);
+        console.error("❌ MongoDB Connection Error:", err.message);
+        console.log("⚠️ Running in memory-only mode (socket gameplay will still work, but session data won't persist).");
     }
 };
 

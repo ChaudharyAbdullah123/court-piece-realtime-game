@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<title>Court Piece Test Client</title>
+
+<style>
+
+body{
+    font-family: Arial;
+    background:#1e1e1e;
+    color:white;
+    padding:20px;
+}
+
+h1{
+    color:gold;
+}
+
+.section{
+    border:1px solid #444;
+    padding:15px;
+    margin-bottom:20px;
+    border-radius:10px;
+    background:#2a2a2a;
+}
+
+input,button{
+    padding:10px;
+    margin:5px;
+    border:none;
+    border-radius:5px;
+}
+
+button{
+    cursor:pointer;
+    background:#444;
+    color:white;
+}
+
+button:hover{
+    background:#666;
+}
+
+#hand{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    margin-top:10px;
+}
+
+.card{
+    width:80px;
+    height:110px;
+    background:white;
+    color:black;
+    border-radius:10px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+    font-size:20px;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+.card:hover{
+    transform:scale(1.05);
+}
+
+.red{
+    color:red;
+}
+
+.black{
+    color:black;
+}
+
+#table{
+    display:flex;
+    gap:20px;
+    margin-top:15px;
+}
+
+.table-card{
+    width:90px;
+    height:120px;
+    background:#fff;
+    color:black;
+    border-radius:10px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    flex-direction:column;
+    font-size:22px;
+    font-weight:bold;
+}
+
+.log{
+    background:black;
+    padding:10px;
+    height:250px;
+    overflow:auto;
+    border-radius:10px;
+}
+
+.turn{
+    color:lime;
+    font-weight:bold;
+}
+
+.not-turn{
+    color:red;
+    font-weight:bold;
+}
+
+</style>
+</head>
+
+<body>
+
+<h1>🎮 Court Piece Professional Test Client</h1>
+
+<!-- ===================== CONNECTION ===================== -->
+
+<div class="section">
+
+<h2>Player Setup</h2>
+
+<input id="username" placeholder="Enter Username" />
+
+<button onclick="joinRoom()">Join Room</button>
+
+<button onclick="startGame()">Start Game</button>
+
+</div>
+
+<!-- ===================== GAME INFO ===================== -->
+
+<div class="section">
+
+<h2>Game Info</h2>
+
+<p><strong>Room:</strong> <span id="roomID">-</span></p>
+
+<p><strong>Trump:</strong> <span id="trumpSuit">-</span></p>
+
+<p><strong>Status:</strong> <span id="turnStatus">Waiting...</span></p>
+
+<p><strong>Your Team:</strong> <span id="myTeam">-</span></p>
+
+</div>
+
+<!-- ===================== TRUMP ===================== -->
+
+<div class="section">
+
+<h2>Trump Selection</h2>
+
+<input id="suit" placeholder="hearts/spades/clubs/diamonds" />
+
+<button onclick="selectTrump()">Select Trump</button>
+
+</div>
+
+<!-- ===================== PLAYERS ===================== -->
+
+<div class="section">
+
+<h2>Players</h2>
+
+<div id="players"></div>
+
+</div>
+
+<!-- ===================== TABLE ===================== -->
+
+<div class="section">
+
+<h2>Table</h2>
+
+<div id="table"></div>
+
+</div>
+
+<!-- ===================== HAND ===================== -->
+
+<div class="section">
+
+<h2>Your Hand</h2>
+
+<div id="hand"></div>
+
+</div>
+
+<!-- ===================== LOGS ===================== -->
+
+<div class="section">
+
+<h2>Logs</h2>
+
+<div class="log" id="logs"></div>
+
+</div>
+
+<script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+
+<script>
+
+const socket = io("http://localhost:5000");
+
+let myHand = [];
+let myTurn = false;
+let roomID = "";
+let selectedTrump = "";
+
+const handDiv = document.getElementById("hand");
+const logs = document.getElementById("logs");
+const tableDiv = document.getElementById("table");
+
+function log(msg){
+
+    logs.innerHTML += `<div>${msg}</div>`;
+    logs.scrollTop = logs.scrollHeight;
+}
+
+function getSuitSymbol(suit){
+
+    if(suit === "hearts") return "♥";
+    if(suit === "diamonds") return "♦";
+    if(suit === "clubs") return "♣";
+    if(suit === "spades") return "♠";
+
+    return "?";
+}
+
+function getSuitClass(suit){
+
+    if(suit === "hearts" || suit === "diamonds"){
+        return "red";
+    }
+
+    return "black";
+}
+
+function renderHand(){
+
+    handDiv.innerHTML = "";
+
+    myHand.forEach(card => {
+
+        const div = document.createElement("div");
+
+        div.className = `card ${getSuitClass(card.suit)}`;
+
+        div.innerHTML = `
+            <div>${card.value}</div>
+            <div>${getSuitSymbol(card.suit)}</div>
+        `;
+
+        div.onclick = () => playCard(card);
+
+        handDiv.appendChild(div);
+    });
+}
+
+function renderTableCard(cardData){
+
+    const div = document.createElement("div");
+
+    div.className = `table-card ${getSuitClass(cardData.card.suit)}`;
+
+    div.innerHTML = `
+        <div>${cardData.card.value}</div>
+        <div>${getSuitSymbol(cardData.card.suit)}</div>
+    `;
+
+    tableDiv.appendChild(div);
+}
+
+function joinRoom(){
+
+    const username =
+        document.getElementById("username").value;
+
+    socket.emit("join_room", {
+        username
+    });
+}
+
+let gameStarted = false;
+
+function startGame(){
+
+    console.log("🚀 START GAME CLICKED");
+
+    console.log("ROOM ID:", roomID);
+
+    if(gameStarted){
+
+        log("❌ Game already started");
+        return;
+    }
+
+    if(!roomID){
+
+        log("❌ ROOM ID EMPTY");
+        return;
+    }
+
+    gameStarted = true;
+
+    socket.emit(
+        "start_game",
+        {
+            roomID: roomID
+        }
+    );
+}
+
+function selectTrump(){
+
+    const suit =
+        document.getElementById("suit")
+        .value
+        .trim()
+        .toLowerCase();
+
+    console.log("🎯 SELECT TRUMP");
+
+    console.log("ROOM:", roomID);
+    console.log("SUIT:", suit);
+
+    if(!roomID){
+
+        log("❌ roomID missing");
+        return;
+    }
+
+    if(!suit){
+
+        log("❌ Enter suit");
+        return;
+    }
+
+    socket.emit(
+        "select_trump",
+        {
+            roomID: roomID,
+            suit: suit
+        }
+    );
+}
+
+function playCard(card){
+
+    if(!myTurn){
+
+        log("❌ Not your turn");
+        return;
+    }
+
+    socket.emit("play_card", {
+        roomID,
+        card
+    });
+}
+
+socket.on("connect", () => {
+
+    log("✅ Connected: " + socket.id);
+});
+
+socket.on("room_joined", (data) => {
+
+    console.log("🔥 room_joined EVENT");
+
+    console.log(data);
+
+    if(!data.roomID){
+
+        log("❌ roomID NOT RECEIVED");
+        return;
+    }
+
+    roomID = data.roomID;
+
+    console.log("✅ ROOM ID SAVED:", roomID);
+
+    document.getElementById("roomID")
+        .innerText = roomID;
+
+    log("🏠 Joined Room: " + roomID);
+});
+
+socket.on("room_update", (room) => {
+
+    const playersDiv =
+        document.getElementById("players");
+
+    playersDiv.innerHTML = "";
+
+    room.players.forEach((p,index)=>{
+
+        playersDiv.innerHTML += `
+            <div>
+                ${index+1}. ${p.username}
+            </div>
+        `;
+    });
+});
+
+socket.on("teams_assigned", (data) => {
+
+    log("👥 Teams Assigned");
+
+    const myPlayer =
+        data.players.find(
+            p => p.socketId === socket.id
+        );
+
+    if(myPlayer){
+
+        document.getElementById("myTeam").innerText =
+            myPlayer.team;
+    }
+
+    data.players.forEach(p=>{
+
+        log(`${p.username} → Team ${p.team}`);
+    });
+});
+
+socket.on("your_initial_card", (data) => {
+
+    log(
+        `🃏 Initial Card: ${data.card.value} ${getSuitSymbol(data.card.suit)}`
+    );
+});
+
+socket.on("choose_trump", (data) => {
+
+    alert("🎯 YOU ARE TRUMP SELECTOR");
+
+    log("🎯 You are Trump Selector");
+});
+
+socket.on("trump_chosen", (data) => {
+
+    selectedTrump = data.suit;
+
+    document.getElementById("trumpSuit").innerText =
+        data.suit;
+
+    log("🔥 Trump Selected: " + data.suit);
+});
+
+socket.on("receive_hand", (data) => {
+
+    myHand = data.hand;
+
+    renderHand();
+
+    log("🖐 Hand Received");
+});
+
+socket.on("your_turn", (data) => {
+
+    myTurn = true;
+
+    myHand = data.hand;
+
+    renderHand();
+
+    document.getElementById("turnStatus").innerHTML =
+        `<span class="turn">YOUR TURN</span>`;
+
+    log("✅ Your Turn");
+});
+
+socket.on("card_played_on_table", (data) => {
+
+    myTurn = false;
+
+    document.getElementById("turnStatus").innerHTML =
+        `<span class="not-turn">Waiting...</span>`;
+
+    renderTableCard(data);
+
+    log(
+        `🃏 Card Played: ${data.card.value} ${getSuitSymbol(data.card.suit)}`
+    );
+});
+
+socket.on("trick_winner", (data) => {
+
+    log("🏆 Trick Winner: " + data.winnerId);
+
+    log(
+        `Score => A:${data.tricksWon.A} | B:${data.tricksWon.B}`
+    );
+
+    setTimeout(()=>{
+
+        tableDiv.innerHTML = "";
+
+    },1500);
+});
+
+socket.on("round_ended", (data) => {
+
+    log("🏁 ROUND ENDED");
+
+    log("🏆 Winner Team: " + data.winningTeam);
+
+    log(
+        `Final Tricks => A:${data.tricksWon.A} | B:${data.tricksWon.B}`
+    );
+
+    if(data.scores){
+
+        log(
+            `MATCH SCORE => A:${data.scores.A} | B:${data.scores.B}`
+        );
+    }
+});
+
+socket.on("invalid_move", (data) => {
+
+    log("❌ " + data.msg);
+});
+
+socket.on("game_paused", (data) => {
+
+    log("⏸ " + data.msg);
+});
+
+socket.onAny((event, data) => {
+
+    console.log(
+        "📡 EVENT RECEIVED:",
+        event,
+        data
+    );
+});
+
+socket.on("disconnect", () => {
+
+    log("❌ Disconnected");
+});
+
+</script>
+
+</body>
+</html>
