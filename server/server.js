@@ -26,6 +26,11 @@ app.use(express.urlencoded({ extended: true }));
 // Routes
 app.use('/api/auth', authRoutes);
 
+// Health Check
+app.get('/api/health', (req, res) => {
+    res.json({ status: 'OK', uptime: process.uptime() });
+});
+
 // Start server
 const server = http.createServer(app);
 

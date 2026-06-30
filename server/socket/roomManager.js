@@ -3,43 +3,112 @@ let roomCounter = 1;
 const disconnectTimers = {};
 
 // =========================
+// GENERATE UNIQUE ROOM CODE
+// =========================
+function generateRoomCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code;
+    let unique = false;
+    while (!unique) {
+        code = '';
+        for (let i = 0; i < 6; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        unique = true;
+        for (const roomID in rooms) {
+            if (rooms[roomID].code === code) {
+                unique = false;
+                break;
+            }
+        }
+    }
+    return code;
+}
+
+// =========================
 // CREATE ROOM
 // =========================
-function createRoom() {
+function createRoom(isPrivate = false) {
     const roomID = `room${roomCounter++}`;
+    const roomCode = generateRoomCode();
     rooms[roomID] = {
         roomID,
+        code: roomCode,
         players: [],
+        spectators: [],
         status: "waiting",
         gameStarted: false,
+        isPrivate,
+        isGuestRoom: false,
         createdAt: Date.now()
     };
-    console.log(`🆕 Room Created: ${roomID}`);
+    console.log(`🆕 Room Created: ${roomID} (Code: ${roomCode}, Private: ${isPrivate})`);
     return roomID;
 }
 
 // =========================
-// FIND AVAILABLE ROOM
+// JOIN ROOM (MATCHMAKING)
 // =========================
-function findAvailableRoom() {
-    for (const roomID in rooms) {
-        const room = rooms[roomID];
-        if (room.players.length < 4 && room.gameStarted === false) {
-            return roomID;
-        }
-    }
-    return null;
-}
-
-// =========================
-// JOIN ROOM
-// =========================
-function joinRoom(io, socket, username) {
+function joinRoom(io, socket, username, isGuest = false) {
     removePlayerFromRooms(io, socket.id);
 
-    let roomID = findAvailableRoom();
+    // If player is a guest, force them into an isolated bot-only room immediately
+    if (isGuest) {
+        const roomID = `room${roomCounter++}`;
+        const roomCode = generateRoomCode();
+        rooms[roomID] = {
+            roomID,
+            code: roomCode,
+            players: [],
+            spectators: [],
+            status: "waiting",
+            gameStarted: false,
+            isPrivate: true,
+            isGuestRoom: true,
+            createdAt: Date.now()
+        };
+
+        const room = rooms[roomID];
+        const player = {
+            socketId: socket.id,
+            username,
+            connected: true,
+            joinedAt: Date.now(),
+            team: null,
+            isBot: false
+        };
+
+        room.players.push(player);
+        room.owner = socket.id;
+        socket.join(roomID);
+
+        console.log(`👤 Guest ${username} joined guest-only room ${roomID}`);
+
+        // Auto fill with bots and start the game after a small delay
+        fillWithBots(io, roomID);
+        io.to(roomID).emit("room_update", room);
+
+        setTimeout(() => {
+            const gameManager = require('../game/gameManager');
+            room.gameStarted = true;
+            gameManager.startGame(io, roomID);
+        }, 1000);
+
+        return roomID;
+    }
+
+    // For registered players, find a public, non-guest room
+    let roomID = null;
+    for (const id in rooms) {
+        const room = rooms[id];
+        if (room.players.length < 4 && !room.gameStarted && !room.isPrivate && !room.isGuestRoom) {
+            roomID = id;
+            break;
+        }
+    }
+
     if (!roomID) {
-        roomID = createRoom();
+        roomID = createRoom(false);
     }
 
     const room = rooms[roomID];
@@ -59,10 +128,119 @@ function joinRoom(io, socket, username) {
     }
 
     socket.join(roomID);
-    console.log(`Player ${username} joined ${roomID}`);
+    console.log(`Player ${username} joined public room ${roomID}`);
 
     io.to(roomID).emit("room_update", room);
     return roomID;
+}
+
+// =========================
+// JOIN ROOM BY CODE (PRIVATE)
+// =========================
+function joinRoomByCode(io, socket, roomCode, username) {
+    removePlayerFromRooms(io, socket.id);
+
+    let foundRoom = null;
+    for (const id in rooms) {
+        if (rooms[id].code === roomCode) {
+            foundRoom = rooms[id];
+            break;
+        }
+    }
+
+    if (!foundRoom) {
+        socket.emit("error", { msg: "Room not found with code: " + roomCode });
+        return null;
+    }
+
+    if (foundRoom.players.length >= 4) {
+        socket.emit("error", { msg: "Room is full" });
+        return null;
+    }
+
+    if (foundRoom.gameStarted) {
+        socket.emit("error", { msg: "Game already started in this room" });
+        return null;
+    }
+
+    const player = {
+        socketId: socket.id,
+        username,
+        connected: true,
+        joinedAt: Date.now(),
+        team: null,
+        isBot: false
+    };
+
+    foundRoom.players.push(player);
+
+    if (foundRoom.players.length === 1) {
+        foundRoom.owner = socket.id;
+    }
+
+    socket.join(foundRoom.roomID);
+    console.log(`Player ${username} joined private room ${foundRoom.roomID} via code`);
+
+    io.to(foundRoom.roomID).emit("room_update", foundRoom);
+    return foundRoom.roomID;
+}
+
+// =========================
+// JOIN AS SPECTATOR
+// =========================
+function joinAsSpectator(io, socket, roomCode) {
+    removePlayerFromRooms(io, socket.id);
+
+    let foundRoom = null;
+    for (const id in rooms) {
+        if (rooms[id].code === roomCode) {
+            foundRoom = rooms[id];
+            break;
+        }
+    }
+
+    if (!foundRoom) {
+        socket.emit("error", { msg: "Room not found with code: " + roomCode });
+        return null;
+    }
+
+    if (!foundRoom.spectators) {
+        foundRoom.spectators = [];
+    }
+
+    foundRoom.spectators.push(socket.id);
+    socket.join(foundRoom.roomID);
+
+    console.log(`👀 Spectator ${socket.id} joined room ${foundRoom.roomID}`);
+
+    const gameManager = require('../game/gameManager');
+    const game = gameManager.games[foundRoom.roomID];
+    
+    socket.emit("spectator_joined", { 
+        roomID: foundRoom.roomID, 
+        gameState: game ? {
+            players: game.players.map(p => ({
+                socketId: p.socketId,
+                username: p.username,
+                team: p.team,
+                connected: p.connected,
+                isBot: p.isBot
+            })),
+            table: game.table,
+            trump: game.trump,
+            trumpRevealed: game.trumpRevealed,
+            trumpSelector: game.trumpSelector,
+            leadSuit: game.leadSuit,
+            scores: game.scores,
+            sar: game.sar,
+            tricksPlayed: game.tricksPlayed,
+            phase: game.phase,
+            currentTurnIndex: game.currentTurnIndex
+        } : null 
+    });
+
+    io.to(foundRoom.roomID).emit("room_update", foundRoom);
+    return foundRoom.roomID;
 }
 
 // =========================
@@ -96,16 +274,16 @@ function fillWithBots(io, roomID) {
 function removePlayerFromRooms(io, socketId) {
     for (const roomID in rooms) {
         const room = rooms[roomID];
+        
+        // Clean up from players list
         const index = room.players.findIndex(p => p.socketId === socketId);
-
         if (index !== -1) {
             const removedPlayer = room.players[index];
             room.players.splice(index, 1);
-            console.log(`🚪 ${removedPlayer.username} removed from ${roomID}`);
+            console.log(`🚪 Player ${removedPlayer.username} removed from ${roomID}`);
 
             io.to(roomID).emit("room_update", room);
 
-            // pause game if player leaves and there are not enough players/bots
             const activeCount = room.players.filter(p => p.connected || p.isBot).length;
             if (room.gameStarted && activeCount < 4) {
                 room.gameStarted = false;
@@ -113,12 +291,22 @@ function removePlayerFromRooms(io, socketId) {
                 io.to(roomID).emit("game_paused", { msg: "Not enough active players" });
                 console.log(`⏸ Game paused in ${roomID}`);
             }
+        }
 
-            // delete empty room
-            if (room.players.length === 0) {
-                console.log(`🗑 Room Deleted: ${roomID}`);
-                delete rooms[roomID];
+        // Clean up from spectators list
+        if (room.spectators) {
+            const specIndex = room.spectators.indexOf(socketId);
+            if (specIndex !== -1) {
+                room.spectators.splice(specIndex, 1);
+                console.log(`👀 Spectator ${socketId} left room ${roomID}`);
+                io.to(roomID).emit("room_update", room);
             }
+        }
+
+        // Delete empty room
+        if (room.players.length === 0 && (!room.spectators || room.spectators.length === 0)) {
+            console.log(`🗑 Room Deleted: ${roomID}`);
+            delete rooms[roomID];
         }
     }
 }
@@ -130,11 +318,11 @@ function handleDisconnect(io, socketId) {
     for (const roomID in rooms) {
         const room = rooms[roomID];
         const player = room.players.find(p => p.socketId === socketId);
+        
         if (player) {
             console.log(`❌ Disconnected player: ${player.username} from room ${roomID}`);
 
             if (room.gameStarted) {
-                // If game is active, mark offline and start 15s grace timer
                 player.connected = false;
                 io.to(roomID).emit("player_disconnected", {
                     username: player.username,
@@ -151,16 +339,19 @@ function handleDisconnect(io, socketId) {
                     player.isBot = true;
                     io.to(roomID).emit("bot_takeover", { username: player.username });
 
-                    // Trigger bot turn if it is currently their turn
                     const gameManager = require('../game/gameManager');
                     gameManager.checkAndTriggerBotTurn(io, roomID);
 
                     delete disconnectTimers[timerKey];
-                }, 15000); // 15-second grace period
+                }, 15000);
             } else {
-                // Game not started, just remove player immediately
                 removePlayerFromRooms(io, socketId);
             }
+        }
+
+        // Disconnecting spectator
+        if (room.spectators && room.spectators.includes(socketId)) {
+            removePlayerFromRooms(io, socketId);
         }
     }
 }
@@ -178,44 +369,37 @@ function reconnectPlayer(io, socket, { roomID, username }) {
     const oldSocketId = player.socketId;
     const newSocketId = socket.id;
 
-    // Clear disconnect timer
     const timerKey = `${roomID}_${username}`;
     if (disconnectTimers[timerKey]) {
         clearTimeout(disconnectTimers[timerKey]);
         delete disconnectTimers[timerKey];
     }
 
-    // Update socketId
     player.socketId = newSocketId;
     player.connected = true;
-    player.isBot = false; // Player is back
+    player.isBot = false;
 
     socket.join(roomID);
     console.log(`♻️ Player ${username} reconnected with socket ID ${newSocketId}`);
 
-    // Update game state references
     const gameManager = require('../game/gameManager');
     const game = gameManager.games[roomID];
     if (game) {
-        // Update player list socket IDs
         const gp = game.players.find(p => p.username === username);
         if (gp) {
             gp.socketId = newSocketId;
             gp.connected = true;
         }
 
-        // Update hands map
         if (game.hands[oldSocketId]) {
             game.hands[newSocketId] = game.hands[oldSocketId];
             delete game.hands[oldSocketId];
         }
 
-        // Update trump selector
         if (game.trumpSelector === oldSocketId) {
             game.trumpSelector = newSocketId;
         }
 
-        // Update table plays
         if (game.table) {
             game.table.forEach(play => {
                 if (play.playerId === oldSocketId) {
@@ -224,15 +408,12 @@ function reconnectPlayer(io, socket, { roomID, username }) {
             });
         }
 
-        // Update senior player ID
         if (game.seniorPlayerId === oldSocketId) {
             game.seniorPlayerId = newSocketId;
         }
 
-        // Notify room
         io.to(roomID).emit("player_reconnected", { username });
 
-        // Send full sync state to reconnected player
         socket.emit("reconnect_success", {
             roomID,
             gameState: {
@@ -258,7 +439,6 @@ function reconnectPlayer(io, socket, { roomID, username }) {
             }
         });
 
-        // Trigger turn if it's their turn
         const currentTurnPlayer = game.players[game.currentTurnIndex];
         if (game.phase === "playing" && currentTurnPlayer.socketId === newSocketId) {
             socket.emit("your_turn", { hand: game.hands[newSocketId] });
@@ -271,9 +451,6 @@ function reconnectPlayer(io, socket, { roomID, username }) {
     return true;
 }
 
-// =========================
-// LEAVE ROOM
-// =========================
 function leaveRoom(io, socketId) {
     removePlayerFromRooms(io, socketId);
 }
@@ -283,7 +460,10 @@ function leaveRoom(io, socketId) {
 // =========================
 module.exports = {
     rooms,
+    createRoom,
     joinRoom,
+    joinRoomByCode,
+    joinAsSpectator,
     fillWithBots,
     leaveRoom,
     removePlayerFromRooms,
