@@ -66,8 +66,12 @@ function startGame(io, roomID) {
     io.to(roomID).emit('teams_assigned', {
         players: games[roomID].players.map(p => ({
             socketId: p.socketId,
+            userId:   p.userId   || null,
             username: p.username,
-            team: p.team
+            photoURL: p.photoURL || '',
+            isGuest:  p.isGuest  !== false,
+            isBot:    p.isBot    || false,
+            team:     p.team
         }))
     });
 
@@ -100,7 +104,11 @@ function selectTrump(io, socket, { roomID, suit }) {
     game.trump = suit;
     console.log('✅ Trump Selected:', suit);
 
-    io.to(roomID).emit('trump_chosen', { suit });
+    io.to(roomID).emit('trump_chosen', {
+        suit,
+        selectorId: game.trumpSelector,
+        selectorName: game.players.find(p => p.socketId === game.trumpSelector)?.username || 'Player'
+    });
 
     dealManager.completeDeal(io, game);
     delete game.initialCards;
@@ -108,6 +116,14 @@ function selectTrump(io, socket, { roomID, suit }) {
     game.currentTurnIndex = game.players.findIndex(p => p.socketId === game.trumpSelector);
     const firstPlayer = game.players[game.currentTurnIndex];
     console.log('🎯 First Turn:', firstPlayer.username);
+
+    // Broadcast room-wide turn changed event
+    io.to(roomID).emit('turn_changed', {
+        activePlayerId: firstPlayer.socketId,
+        username:       firstPlayer.username,
+        isBot:          firstPlayer.isBot,
+        team:           firstPlayer.team
+    });
 
     io.to(firstPlayer.socketId).emit('your_turn', { hand: game.hands[firstPlayer.socketId] });
     game.phase = 'playing';
@@ -174,11 +190,27 @@ function playCard(io, socket, { roomID, card }) {
 
         game.currentTurnIndex = game.players.findIndex(p => p.socketId === winnerId);
         const nextPlayer = game.players[game.currentTurnIndex];
+        
+        io.to(roomID).emit('turn_changed', {
+            activePlayerId: nextPlayer.socketId,
+            username:       nextPlayer.username,
+            isBot:          nextPlayer.isBot,
+            team:           nextPlayer.team
+        });
+
         io.to(nextPlayer.socketId).emit('your_turn', { hand: game.hands[nextPlayer.socketId] });
         startTurnTimer(io, roomID, game);
     } else {
         game.currentTurnIndex = (game.currentTurnIndex + 1) % game.players.length;
         const nextPlayer = game.players[game.currentTurnIndex];
+
+        io.to(roomID).emit('turn_changed', {
+            activePlayerId: nextPlayer.socketId,
+            username:       nextPlayer.username,
+            isBot:          nextPlayer.isBot,
+            team:           nextPlayer.team
+        });
+
         io.to(nextPlayer.socketId).emit('your_turn', { hand: game.hands[nextPlayer.socketId] });
         startTurnTimer(io, roomID, game);
     }

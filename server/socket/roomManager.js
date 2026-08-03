@@ -2,363 +2,322 @@ const rooms = {};
 let roomCounter = 1;
 const disconnectTimers = {};
 
-// =========================
+const BOT_NAMES = ['Ahmad 🤖', 'Bilal 🤖', 'Tariq 🤖', 'Kamran 🤖'];
+
+// ===============================================================
 // GENERATE UNIQUE ROOM CODE
-// =========================
+// ===============================================================
 function generateRoomCode() {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-    let code;
-    let unique = false;
+    let code, unique = false;
     while (!unique) {
         code = '';
-        for (let i = 0; i < 6; i++) {
-            code += chars.charAt(Math.floor(Math.random() * chars.length));
-        }
-        unique = true;
-        for (const roomID in rooms) {
-            if (rooms[roomID].code === code) {
-                unique = false;
-                break;
-            }
-        }
+        for (let i = 0; i < 6; i++) code += chars.charAt(Math.floor(Math.random() * chars.length));
+        unique = !Object.values(rooms).some(r => r.code === code);
     }
     return code;
 }
 
-// =========================
-// CREATE ROOM
-// =========================
-function createRoom(isPrivate = false) {
-    const roomID = `room${roomCounter++}`;
+// ===============================================================
+// BASE ROOM FACTORY
+// ===============================================================
+function createBaseRoom(isPrivate = false, mode = 'friends') {
+    const roomID   = `room${roomCounter++}`;
     const roomCode = generateRoomCode();
-    rooms[roomID] = {
+    rooms[roomID]  = {
         roomID,
-        code: roomCode,
-        players: [],
-        spectators: [],
-        status: 'waiting',
+        code:        roomCode,
+        players:     [],
+        spectators:  [],
+        status:      'waiting',
         gameStarted: false,
         isPrivate,
-        isGuestRoom: false,
-        createdAt: Date.now()
+        mode,            // 'bots' | 'friends'
+        createdAt:   Date.now()
     };
-    console.log(`🆕 Room Created: ${roomID} (Code: ${roomCode}, Private: ${isPrivate})`);
+    console.log(`🆕 Room ${roomID} | Code: ${roomCode} | Mode: ${mode}`);
     return roomID;
 }
 
-// =========================
-// JOIN ROOM (MATCHMAKING)
-// =========================
-function joinRoom(io, socket, username, isGuest = false) {
+// ===============================================================
+// CREATE ROOM (generic, kept for backward-compat with createRoom(true))
+// ===============================================================
+function createRoom(isPrivate = false) {
+    return createBaseRoom(isPrivate, 'friends');
+}
+
+// ===============================================================
+// MODE A — PLAY WITH BOTS (instant, 1-2 humans + bots)
+// ===============================================================
+function createBotRoom(io, socket, username) {
     removePlayerFromRooms(io, socket.id);
 
-    // If player is a guest, force them into an isolated bot-only room immediately
-    if (isGuest) {
-        const roomID = `room${roomCounter++}`;
-        const roomCode = generateRoomCode();
-        rooms[roomID] = {
-            roomID,
-            code: roomCode,
-            players: [],
-            spectators: [],
-            status: 'waiting',
-            gameStarted: false,
-            isPrivate: true,
-            isGuestRoom: true,
-            createdAt: Date.now()
-        };
+    const roomID = createBaseRoom(true, 'bots');
+    const room   = rooms[roomID];
 
-        const room = rooms[roomID];
-        const player = {
-            socketId: socket.id,
-            username,
-            connected: true,
-            joinedAt: Date.now(),
-            team: null,
-            isBot: false
-        };
-
-        room.players.push(player);
-        room.owner = socket.id;
-        socket.join(roomID);
-
-        console.log(`👤 Guest ${username} joined guest-only room ${roomID}`);
-
-        // Auto fill with bots and start the game after a small delay
-        fillWithBots(io, roomID);
-        io.to(roomID).emit('room_update', room);
-
-        setTimeout(() => {
-            const gameManager = require('../game/gameManager');
-            room.gameStarted = true;
-            gameManager.startGame(io, roomID);
-        }, 1000);
-
-        return roomID;
-    }
-
-    // For registered players, find a public, non-guest room
-    let roomID = null;
-    for (const id in rooms) {
-        const room = rooms[id];
-        if (room.players.length < 4 && !room.gameStarted && !room.isPrivate && !room.isGuestRoom) {
-            roomID = id;
-            break;
-        }
-    }
-
-    if (!roomID) {
-        roomID = createRoom(false);
-    }
-
-    const room = rooms[roomID];
-    const player = {
-        socketId: socket.id,
-        username,
+    // Add the real player
+    room.players.push({
+        socketId:  socket.id,
+        userId:    socket.userId   || null,
+        username:  username        || socket.username,
+        photoURL:  socket.photoURL || '',
+        isGuest:   socket.isGuest  !== false,
         connected: true,
-        joinedAt: Date.now(),
-        team: null,
-        isBot: false
-    };
-
-    room.players.push(player);
-
-    if (room.players.length === 1) {
-        room.owner = socket.id;
-    }
-
+        joinedAt:  Date.now(),
+        team:      null,
+        isBot:     false
+    });
+    room.owner = socket.id;
     socket.join(roomID);
-    console.log(`Player ${username} joined public room ${roomID}`);
 
+    console.log(`🎮 Bot Room created: ${roomID} for ${username}`);
+
+    // Fill remaining seats with bots immediately
+    _fillWithBots(room);
     io.to(roomID).emit('room_update', room);
+    socket.emit('room_joined', { roomID, roomCode: room.code, mode: 'bots' });
+
+    // Auto-start game after 2 seconds
+    setTimeout(() => {
+        if (!rooms[roomID]) return;
+        const gameManager = require('../game/gameManager');
+        room.gameStarted  = true;
+        gameManager.startGame(io, roomID);
+    }, 2000);
+
     return roomID;
 }
 
-// =========================
-// JOIN ROOM BY CODE (PRIVATE)
-// =========================
+// ===============================================================
+// MODE B — PLAY WITH FRIENDS (4 humans, no bots at start)
+// ===============================================================
+function createFriendsRoom(io, socket, username) {
+    removePlayerFromRooms(io, socket.id);
+
+    const roomID = createBaseRoom(true, 'friends');
+    const room   = rooms[roomID];
+
+    room.players.push({
+        socketId:  socket.id,
+        userId:    socket.userId   || null,
+        username:  username        || socket.username,
+        photoURL:  socket.photoURL || '',
+        isGuest:   socket.isGuest  !== false,
+        connected: true,
+        joinedAt:  Date.now(),
+        team:      null,
+        isBot:     false
+    });
+    room.owner = socket.id;
+    socket.join(roomID);
+
+    console.log(`👥 Friends Room created: ${roomID} | Code: ${room.code} | Owner: ${username}`);
+
+    io.to(roomID).emit('room_update', room);
+    socket.emit('private_room_created', { roomID, roomCode: room.code, mode: 'friends' });
+    socket.emit('room_joined', { roomID, roomCode: room.code, mode: 'friends' });
+
+    return roomID;
+}
+
+// ===============================================================
+// JOIN ROOM BY CODE (both modes)
+// ===============================================================
 function joinRoomByCode(io, socket, roomCode, username) {
     removePlayerFromRooms(io, socket.id);
 
-    let foundRoom = null;
-    for (const id in rooms) {
-        if (rooms[id].code === roomCode) {
-            foundRoom = rooms[id];
-            break;
-        }
-    }
-
-    if (!foundRoom) {
-        socket.emit('error', { msg: 'Room not found with code: ' + roomCode });
+    const entry = Object.values(rooms).find(r => r.code === roomCode);
+    if (!entry) {
+        socket.emit('error', { msg: 'Room not found: ' + roomCode });
         return null;
     }
-
-    if (foundRoom.players.length >= 4) {
+    if (entry.players.length >= 4) {
         socket.emit('error', { msg: 'Room is full' });
         return null;
     }
-
-    if (foundRoom.gameStarted) {
-        socket.emit('error', { msg: 'Game already started in this room' });
+    if (entry.gameStarted) {
+        socket.emit('error', { msg: 'Game already started' });
         return null;
     }
 
-    const player = {
-        socketId: socket.id,
-        username,
+    entry.players.push({
+        socketId:  socket.id,
+        userId:    socket.userId   || null,
+        username:  username        || socket.username,
+        photoURL:  socket.photoURL || '',
+        isGuest:   socket.isGuest  !== false,
         connected: true,
-        joinedAt: Date.now(),
-        team: null,
-        isBot: false
-    };
+        joinedAt:  Date.now(),
+        team:      null,
+        isBot:     false
+    });
 
-    foundRoom.players.push(player);
+    socket.join(entry.roomID);
+    console.log(`🔑 ${username} joined room ${entry.roomID} via code`);
 
-    if (foundRoom.players.length === 1) {
-        foundRoom.owner = socket.id;
-    }
+    io.to(entry.roomID).emit('room_update', entry);
+    socket.emit('room_joined', { roomID: entry.roomID, roomCode: entry.code, mode: entry.mode });
 
-    socket.join(foundRoom.roomID);
-    console.log(`Player ${username} joined private room ${foundRoom.roomID} via code`);
-
-    io.to(foundRoom.roomID).emit('room_update', foundRoom);
-    return foundRoom.roomID;
+    return entry.roomID;
 }
 
-// =========================
+// ===============================================================
+// START FRIENDS GAME (owner calls this when all 4 seats filled)
+// ===============================================================
+function startFriendsGame(io, socket, roomID) {
+    const room = rooms[roomID];
+    if (!room) return;
+    if (room.owner !== socket.id) {
+        socket.emit('error', { msg: 'Only the room owner can start the game' });
+        return;
+    }
+
+    // Fill any empty seats with bots if < 4 players
+    _fillWithBots(room);
+
+    const gameManager = require('../game/gameManager');
+    room.gameStarted  = true;
+    io.to(roomID).emit('room_update', room);
+    gameManager.startGame(io, roomID);
+    console.log(`🚀 Friends game started in room ${roomID}`);
+}
+
+// ===============================================================
 // JOIN AS SPECTATOR
-// =========================
+// ===============================================================
 function joinAsSpectator(io, socket, roomCode) {
     removePlayerFromRooms(io, socket.id);
 
-    let foundRoom = null;
-    for (const id in rooms) {
-        if (rooms[id].code === roomCode) {
-            foundRoom = rooms[id];
-            break;
-        }
-    }
+    const entry = Object.values(rooms).find(r => r.code === roomCode);
+    if (!entry) { socket.emit('error', { msg: 'Room not found' }); return null; }
 
-    if (!foundRoom) {
-        socket.emit('error', { msg: 'Room not found with code: ' + roomCode });
-        return null;
-    }
+    if (!entry.spectators) entry.spectators = [];
+    entry.spectators.push(socket.id);
+    socket.join(entry.roomID);
 
-    if (!foundRoom.spectators) {
-        foundRoom.spectators = [];
-    }
-
-    foundRoom.spectators.push(socket.id);
-    socket.join(foundRoom.roomID);
-
-    console.log(`👀 Spectator ${socket.id} joined room ${foundRoom.roomID}`);
+    console.log(`👀 Spectator ${socket.id} joined room ${entry.roomID}`);
 
     const gameManager = require('../game/gameManager');
-    const game = gameManager.games[foundRoom.roomID];
-    
-    socket.emit('spectator_joined', { 
-        roomID: foundRoom.roomID, 
+    const game = gameManager.games[entry.roomID];
+
+    socket.emit('spectator_joined', {
+        roomID: entry.roomID,
         gameState: game ? {
-            players: game.players.map(p => ({
-                socketId: p.socketId,
-                username: p.username,
-                team: p.team,
-                connected: p.connected,
-                isBot: p.isBot
-            })),
-            table: game.table,
-            trump: game.trump,
-            trumpRevealed: game.trumpRevealed,
-            trumpSelector: game.trumpSelector,
-            leadSuit: game.leadSuit,
-            scores: game.scores,
-            sar: game.sar,
-            tricksPlayed: game.tricksPlayed,
-            phase: game.phase,
+            players:          game.players.map(p => ({ socketId: p.socketId, username: p.username, team: p.team, connected: p.connected, isBot: p.isBot })),
+            table:            game.table,
+            trump:            game.trump,
+            trumpRevealed:    game.trumpRevealed,
+            trumpSelector:    game.trumpSelector,
+            leadSuit:         game.leadSuit,
+            scores:           game.scores,
+            sar:              game.sar,
+            tricksPlayed:     game.tricksPlayed,
+            phase:            game.phase,
             currentTurnIndex: game.currentTurnIndex
-        } : null 
+        } : null
     });
 
-    io.to(foundRoom.roomID).emit('room_update', foundRoom);
-    return foundRoom.roomID;
+    io.to(entry.roomID).emit('room_update', entry);
+    return entry.roomID;
 }
 
-// =========================
-// FILL WITH BOTS
-// =========================
+// ===============================================================
+// INTERNAL: FILL WITH BOTS
+// ===============================================================
+function _fillWithBots(room) {
+    let botIdx = 0;
+    while (room.players.length < 4) {
+        room.players.push({
+            socketId:  `bot_${room.roomID}_${botIdx}`,
+            username:  BOT_NAMES[botIdx % BOT_NAMES.length],
+            connected: true,
+            joinedAt:  Date.now(),
+            team:      null,
+            isBot:     true
+        });
+        botIdx++;
+    }
+}
+
+// Public wrapper kept for existing callers
 function fillWithBots(io, roomID) {
     const room = rooms[roomID];
     if (!room) return;
-
-    let botCounter = 1;
-    while (room.players.length < 4) {
-        const botId = `bot_${roomID}_${botCounter++}`;
-        const botPlayer = {
-            socketId: botId,
-            username: `Bot_${botCounter - 1}`,
-            connected: true,
-            joinedAt: Date.now(),
-            team: null,
-            isBot: true
-        };
-        room.players.push(botPlayer);
-        console.log(`🤖 Spawning Bot: ${botPlayer.username}`);
-    }
-
+    _fillWithBots(room);
     io.to(roomID).emit('room_update', room);
 }
 
-// =========================
+// ===============================================================
 // REMOVE PLAYER FROM ROOMS
-// =========================
+// ===============================================================
 function removePlayerFromRooms(io, socketId) {
     for (const roomID in rooms) {
         const room = rooms[roomID];
-        
-        // Clean up from players list
-        const index = room.players.findIndex(p => p.socketId === socketId);
-        if (index !== -1) {
-            const removedPlayer = room.players[index];
-            room.players.splice(index, 1);
-            console.log(`🚪 Player ${removedPlayer.username} removed from ${roomID}`);
 
+        const idx = room.players.findIndex(p => p.socketId === socketId);
+        if (idx !== -1) {
+            const removed = room.players.splice(idx, 1)[0];
+            console.log(`🚪 ${removed.username} removed from ${roomID}`);
             io.to(roomID).emit('room_update', room);
 
-            const activeCount = room.players.filter(p => p.connected || p.isBot).length;
-            if (room.gameStarted && activeCount < 4) {
-                room.gameStarted = false;
+            const active = room.players.filter(p => p.connected || p.isBot).length;
+            if (room.gameStarted && active < 4) {
                 room.status = 'paused';
-                io.to(roomID).emit('game_paused', { msg: 'Not enough active players' });
-                console.log(`⏸ Game paused in ${roomID}`);
+                io.to(roomID).emit('game_paused', { msg: 'A player left the game' });
             }
         }
 
-        // Clean up from spectators list
         if (room.spectators) {
-            const specIndex = room.spectators.indexOf(socketId);
-            if (specIndex !== -1) {
-                room.spectators.splice(specIndex, 1);
-                console.log(`👀 Spectator ${socketId} left room ${roomID}`);
-                io.to(roomID).emit('room_update', room);
-            }
+            const si = room.spectators.indexOf(socketId);
+            if (si !== -1) room.spectators.splice(si, 1);
         }
 
-        // Delete empty room
         if (room.players.length === 0 && (!room.spectators || room.spectators.length === 0)) {
-            console.log(`🗑 Room Deleted: ${roomID}`);
             delete rooms[roomID];
         }
     }
 }
 
-// =========================
+// ===============================================================
 // DISCONNECT HANDLER
-// =========================
+// ===============================================================
 function handleDisconnect(io, socketId) {
     for (const roomID in rooms) {
-        const room = rooms[roomID];
+        const room   = rooms[roomID];
         const player = room.players.find(p => p.socketId === socketId);
-        
+
         if (player) {
-            console.log(`❌ Disconnected player: ${player.username} from room ${roomID}`);
+            console.log(`❌ Disconnected: ${player.username} from ${roomID}`);
 
             if (room.gameStarted) {
                 player.connected = false;
-                io.to(roomID).emit('player_disconnected', {
-                    username: player.username,
-                    graceTime: 15
-                });
+                io.to(roomID).emit('player_disconnected', { username: player.username, graceTime: 15 });
 
-                const timerKey = `${roomID}_${player.username}`;
-                if (disconnectTimers[timerKey]) {
-                    clearTimeout(disconnectTimers[timerKey]);
-                }
+                const key = `${roomID}_${player.username}`;
+                if (disconnectTimers[key]) clearTimeout(disconnectTimers[key]);
 
-                disconnectTimers[timerKey] = setTimeout(() => {
-                    console.log(`⏰ Grace period expired for ${player.username} in room ${roomID}. Bot taking over.`);
+                disconnectTimers[key] = setTimeout(() => {
+                    console.log(`🤖 Bot takeover for ${player.username} in ${roomID}`);
                     player.isBot = true;
                     io.to(roomID).emit('bot_takeover', { username: player.username });
-
                     const gameManager = require('../game/gameManager');
                     gameManager.checkAndTriggerBotTurn(io, roomID);
-
-                    delete disconnectTimers[timerKey];
+                    delete disconnectTimers[key];
                 }, 15000);
             } else {
                 removePlayerFromRooms(io, socketId);
             }
         }
 
-        // Disconnecting spectator
-        if (room.spectators && room.spectators.includes(socketId)) {
+        if (room.spectators?.includes(socketId)) {
             removePlayerFromRooms(io, socketId);
         }
     }
 }
 
-// =========================
+// ===============================================================
 // RECONNECT PLAYER
-// =========================
+// ===============================================================
 function reconnectPlayer(io, socket, { roomID, username }) {
     const room = rooms[roomID];
     if (!room) return false;
@@ -369,103 +328,66 @@ function reconnectPlayer(io, socket, { roomID, username }) {
     const oldSocketId = player.socketId;
     const newSocketId = socket.id;
 
-    const timerKey = `${roomID}_${username}`;
-    if (disconnectTimers[timerKey]) {
-        clearTimeout(disconnectTimers[timerKey]);
-        delete disconnectTimers[timerKey];
-    }
+    const key = `${roomID}_${username}`;
+    if (disconnectTimers[key]) { clearTimeout(disconnectTimers[key]); delete disconnectTimers[key]; }
 
-    player.socketId = newSocketId;
+    player.socketId  = newSocketId;
     player.connected = true;
-    player.isBot = false;
+    player.isBot     = false;
 
     socket.join(roomID);
-    console.log(`♻️ Player ${username} reconnected with socket ID ${newSocketId}`);
+    console.log(`♻️ ${username} reconnected → ${newSocketId}`);
 
     const gameManager = require('../game/gameManager');
     const game = gameManager.games[roomID];
     if (game) {
         const gp = game.players.find(p => p.username === username);
-        if (gp) {
-            gp.socketId = newSocketId;
-            gp.connected = true;
-        }
+        if (gp) { gp.socketId = newSocketId; gp.connected = true; }
 
-        if (game.hands[oldSocketId]) {
-            game.hands[newSocketId] = game.hands[oldSocketId];
-            delete game.hands[oldSocketId];
-        }
-
-        if (game.trumpSelector === oldSocketId) {
-            game.trumpSelector = newSocketId;
-        }
-
-        if (game.table) {
-            game.table.forEach(play => {
-                if (play.playerId === oldSocketId) {
-                    play.playerId = newSocketId;
-                }
-            });
-        }
-
-        if (game.seniorPlayerId === oldSocketId) {
-            game.seniorPlayerId = newSocketId;
-        }
+        if (game.hands[oldSocketId]) { game.hands[newSocketId] = game.hands[oldSocketId]; delete game.hands[oldSocketId]; }
+        if (game.trumpSelector === oldSocketId)  game.trumpSelector = newSocketId;
+        if (game.seniorPlayerId === oldSocketId) game.seniorPlayerId = newSocketId;
+        game.table?.forEach(play => { if (play.playerId === oldSocketId) play.playerId = newSocketId; });
 
         io.to(roomID).emit('player_reconnected', { username });
 
         socket.emit('reconnect_success', {
             roomID,
             gameState: {
-                players: game.players.map(p => ({
-                    socketId: p.socketId,
-                    username: p.username,
-                    team: p.team,
-                    connected: p.connected,
-                    isBot: p.isBot
-                })),
-                hand: game.hands[newSocketId] || [],
-                table: game.table,
-                trump: game.trump,
-                trumpRevealed: game.trumpRevealed,
-                trumpSelector: game.trumpSelector,
-                leadSuit: game.leadSuit,
-                scores: game.scores,
-                sar: game.sar,
-                tricksPlayed: game.tricksPlayed,
-                phase: game.phase,
-                isYourTurn: (game.phase === 'playing' && game.players[game.currentTurnIndex].socketId === newSocketId) ||
-                            (game.phase === 'choosing_trump' && game.trumpSelector === newSocketId)
+                players:          game.players.map(p => ({ socketId: p.socketId, username: p.username, team: p.team, connected: p.connected, isBot: p.isBot })),
+                hand:             game.hands[newSocketId] || [],
+                table:            game.table,
+                trump:            game.trump,
+                trumpRevealed:    game.trumpRevealed,
+                trumpSelector:    game.trumpSelector,
+                leadSuit:         game.leadSuit,
+                scores:           game.scores,
+                sar:              game.sar,
+                tricksPlayed:     game.tricksPlayed,
+                phase:            game.phase,
+                isYourTurn:       (game.phase === 'playing' && game.players[game.currentTurnIndex]?.socketId === newSocketId) ||
+                                  (game.phase === 'choosing_trump' && game.trumpSelector === newSocketId)
             }
         });
 
-        const currentTurnPlayer = game.players[game.currentTurnIndex];
-        if (game.phase === 'playing' && currentTurnPlayer.socketId === newSocketId) {
-            socket.emit('your_turn', { hand: game.hands[newSocketId] });
-        } else if (game.phase === 'choosing_trump' && game.trumpSelector === newSocketId) {
-            socket.emit('choose_trump', { roomID, hand: game.hands[newSocketId] });
-        }
+        const cur = game.players[game.currentTurnIndex];
+        if (game.phase === 'playing'        && cur?.socketId === newSocketId) socket.emit('your_turn',     { hand: game.hands[newSocketId] });
+        if (game.phase === 'choosing_trump' && game.trumpSelector === newSocketId) socket.emit('choose_trump', { roomID, hand: game.hands[newSocketId] });
     }
 
     io.to(roomID).emit('room_update', room);
     return true;
 }
 
-function leaveRoom(io, socketId) {
-    removePlayerFromRooms(io, socketId);
-}
-
-// =========================
-// EXPORTS
-// =========================
 module.exports = {
     rooms,
     createRoom,
-    joinRoom,
+    createBotRoom,
+    createFriendsRoom,
+    startFriendsGame,
     joinRoomByCode,
     joinAsSpectator,
     fillWithBots,
-    leaveRoom,
     removePlayerFromRooms,
     handleDisconnect,
     reconnectPlayer
