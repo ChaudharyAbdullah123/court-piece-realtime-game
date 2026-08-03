@@ -54,6 +54,7 @@ function createBotRoom(io, socket, username) {
 
     const roomID = createBaseRoom(true, 'bots');
     const room   = rooms[roomID];
+    room.isGuestRoom = true; // marks room as guest-isolated (no friend requests allowed)
 
     // Add the real player
     room.players.push({
@@ -379,9 +380,22 @@ function reconnectPlayer(io, socket, { roomID, username }) {
     return true;
 }
 
+// ===============================================================
+// JOIN ROOM — backward-compat wrapper used by tests & old callers
+// Routes: guests → bot room, non-guests → friends room
+// ===============================================================
+function joinRoom(io, socket, username, isGuest) {
+    if (isGuest) {
+        return createBotRoom(io, socket, username);
+    } else {
+        return createFriendsRoom(io, socket, username);
+    }
+}
+
 module.exports = {
     rooms,
     createRoom,
+    joinRoom,
     createBotRoom,
     createFriendsRoom,
     startFriendsGame,
